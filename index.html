@@ -8,6 +8,47 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDrNimDjn4N4c8av7QkNQJrG-Us6JpLkMQ",
+      authDomain: "halfie131.firebaseapp.com",
+      projectId: "halfie131",
+      storageBucket: "halfie131.firebasestorage.app",
+      messagingSenderId: "3389341874",
+      appId: "1:3389341874:web:a807edfd56014d5d5d49ab",
+      measurementId: "G-C0ZRTWF6SP"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    
+    // Make Firebase available globally
+    window.firebaseDb = db;
+    window.firebaseDoc = doc;
+    window.firebaseSetDoc = setDoc;
+    window.firebaseGetDoc = getDoc;
+    window.firebaseGetDocs = getDocs;
+    window.firebaseDeleteDoc = deleteDoc;
+    window.firebaseCollection = collection;
+    
+    // Generate or retrieve user ID
+    let userId = localStorage.getItem('halfie_user_id');
+    if (!userId) {
+      userId = 'user_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('halfie_user_id', userId);
+    }
+    window.halfieUserId = userId;
+    
+    // Signal that Firebase is ready
+    window.firebaseReady = true;
+    window.dispatchEvent(new Event('firebaseReady'));
+  </script>
+  
   <style>
     body {
       margin: 0;
@@ -27,12 +68,10 @@
       const [selectedWorkout, setSelectedWorkout] = useState(null);
       const [loading, setLoading] = useState(true);
       const [currentWeek, setCurrentWeek] = useState(1);
-      const [uploadingImage, setUploadingImage] = useState(null);
-      const [extractedData, setExtractedData] = useState(null);
-      const [processingImage, setProcessingImage] = useState(false);
       const [showFullLog, setShowFullLog] = useState(false);
       const [pendingSaves, setPendingSaves] = useState({});
       const [extraActivities, setExtraActivities] = useState([]);
+      const [firebaseInitialized, setFirebaseInitialized] = useState(false);
 
       const trainingPlan = [
         { week: 1, day: 'Tue', date: '2026-01-06', type: 'Easy Run', distance: 5, targetPace: '5:50-6:00' },
@@ -74,8 +113,17 @@
       ];
 
       useEffect(() => {
-        loadWorkouts();
-        loadExtraActivities();
+        if (window.firebaseReady) {
+          setFirebaseInitialized(true);
+          loadWorkouts();
+          loadExtraActivities();
+        } else {
+          window.addEventListener('firebaseReady', () => {
+            setFirebaseInitialized(true);
+            loadWorkouts();
+            loadExtraActivities();
+          });
+        }
       }, []);
 
       useEffect(() => {
@@ -87,14 +135,17 @@
         setCurrentWeek(calculatedWeek);
       }, []);
 
-      const loadWorkouts = () => {
+      const loadWorkouts = async () => {
+        if (!window.firebaseDb) return;
+        
         try {
           const loaded = [];
           for (let i = 0; i < trainingPlan.length; i++) {
-            const key = `workout_${i}`;
-            const stored = localStorage.getItem(key);
-            if (stored) {
-              loaded.push(JSON.parse(stored));
+            const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${i}`);
+            const docSnap = await window.firebaseGetDoc(docRef);
+            
+            if (docSnap.exists()) {
+              loaded.push(docSnap.data());
             } else {
               loaded.push({ ...trainingPlan[i], completed: false, actualDistance: '', actualPace: '', notes: '', actualDate: '' });
             }
@@ -108,10 +159,13 @@
         }
       };
 
-      const saveWorkout = (index, updatedWorkout) => {
+      const saveWorkout = async (index, updatedWorkout) => {
+        if (!window.firebaseDb) return;
+        
         try {
-          const key = `workout_${index}`;
-          localStorage.setItem(key, JSON.stringify(updatedWorkout));
+          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${index}`);
+          await window.firebaseSetDoc(docRef, updatedWorkout);
+          
           const newWorkouts = [...workouts];
           newWorkouts[index] = updatedWorkout;
           setWorkouts(newWorkouts);
@@ -120,12 +174,12 @@
         }
       };
 
-      const toggleComplete = (index) => {
+      const toggleComplete = async (index) => {
         const updated = { ...workouts[index], completed: !workouts[index].completed };
-        saveWorkout(index, updated);
+        await saveWorkout(index, updated);
       };
 
-      const updateWorkoutDetails = (index, field, value) => {
+      const updateWorkoutDetails = async (index, field, value) => {
         const newWorkouts = [...workouts];
         newWorkouts[index] = { ...newWorkouts[index], [field]: value };
         setWorkouts(newWorkouts);
@@ -134,10 +188,11 @@
           clearTimeout(pendingSaves[index]);
         }
         
-        const timeoutId = setTimeout(() => {
+        const timeoutId = setTimeout(async () => {
+          if (!window.firebaseDb) return;
           try {
-            const key = `workout_${index}`;
-            localStorage.setItem(key, JSON.stringify(newWorkouts[index]));
+            const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${index}`);
+            await window.firebaseSetDoc(docRef, newWorkouts[index]);
           } catch (error) {
             console.error('Error saving workout:', error);
           }
@@ -146,11 +201,15 @@
         setPendingSaves({ ...pendingSaves, [index]: timeoutId });
       };
 
-      const loadExtraActivities = () => {
+      const loadExtraActivities = async () => {
+        if (!window.firebaseDb) return;
+        
         try {
-          const stored = localStorage.getItem('extra_activities');
-          if (stored) {
-            setExtraActivities(JSON.parse(stored));
+          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, 'extra_activities');
+          const docSnap = await window.firebaseGetDoc(docRef);
+          
+          if (docSnap.exists()) {
+            setExtraActivities(docSnap.data().activities || []);
           }
         } catch (error) {
           console.error('Error loading extra activities:', error);
@@ -158,16 +217,19 @@
         }
       };
 
-      const saveExtraActivities = (activities) => {
+      const saveExtraActivities = async (activities) => {
+        if (!window.firebaseDb) return;
+        
         try {
-          localStorage.setItem('extra_activities', JSON.stringify(activities));
+          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, 'extra_activities');
+          await window.firebaseSetDoc(docRef, { activities });
           setExtraActivities(activities);
         } catch (error) {
           console.error('Error saving extra activities:', error);
         }
       };
 
-      const addExtraActivity = (week, type, date) => {
+      const addExtraActivity = async (week, type, date) => {
         const newActivity = {
           id: Date.now(),
           week,
@@ -175,12 +237,12 @@
           date,
         };
         const updated = [...extraActivities, newActivity];
-        saveExtraActivities(updated);
+        await saveExtraActivities(updated);
       };
 
-      const deleteExtraActivity = (id) => {
+      const deleteExtraActivity = async (id) => {
         const updated = extraActivities.filter(a => a.id !== id);
-        saveExtraActivities(updated);
+        await saveExtraActivities(updated);
       };
 
       const getWeekExtraActivities = (weekNum) => {
