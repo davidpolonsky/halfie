@@ -9,11 +9,11 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Firebase SDKs -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-
+  <!-- Firebase SDKs - Using compat version for better compatibility -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyDrNimDjn4N4c8av7QkNQJrG-Us6JpLkMQ",
       authDomain: "halfie131.firebaseapp.com",
@@ -24,17 +24,12 @@
       measurementId: "G-C0ZRTWF6SP"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
     
     // Make Firebase available globally
     window.firebaseDb = db;
-    window.firebaseDoc = doc;
-    window.firebaseSetDoc = setDoc;
-    window.firebaseGetDoc = getDoc;
-    window.firebaseGetDocs = getDocs;
-    window.firebaseDeleteDoc = deleteDoc;
-    window.firebaseCollection = collection;
     
     // Generate or retrieve user ID
     let userId = localStorage.getItem('halfie_user_id');
@@ -141,10 +136,10 @@
         try {
           const loaded = [];
           for (let i = 0; i < trainingPlan.length; i++) {
-            const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${i}`);
-            const docSnap = await window.firebaseGetDoc(docRef);
+            const docRef = window.firebaseDb.collection(window.halfieUserId).doc(`workout_${i}`);
+            const docSnap = await docRef.get();
             
-            if (docSnap.exists()) {
+            if (docSnap.exists) {
               loaded.push(docSnap.data());
             } else {
               loaded.push({ ...trainingPlan[i], completed: false, actualDistance: '', actualPace: '', notes: '', actualDate: '' });
@@ -163,8 +158,8 @@
         if (!window.firebaseDb) return;
         
         try {
-          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${index}`);
-          await window.firebaseSetDoc(docRef, updatedWorkout);
+          const docRef = window.firebaseDb.collection(window.halfieUserId).doc(`workout_${index}`);
+          await docRef.set(updatedWorkout);
           
           const newWorkouts = [...workouts];
           newWorkouts[index] = updatedWorkout;
@@ -191,8 +186,8 @@
         const timeoutId = setTimeout(async () => {
           if (!window.firebaseDb) return;
           try {
-            const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, `workout_${index}`);
-            await window.firebaseSetDoc(docRef, newWorkouts[index]);
+            const docRef = window.firebaseDb.collection(window.halfieUserId).doc(`workout_${index}`);
+            await docRef.set(newWorkouts[index]);
           } catch (error) {
             console.error('Error saving workout:', error);
           }
@@ -205,10 +200,10 @@
         if (!window.firebaseDb) return;
         
         try {
-          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, 'extra_activities');
-          const docSnap = await window.firebaseGetDoc(docRef);
+          const docRef = window.firebaseDb.collection(window.halfieUserId).doc('extra_activities');
+          const docSnap = await docRef.get();
           
-          if (docSnap.exists()) {
+          if (docSnap.exists) {
             setExtraActivities(docSnap.data().activities || []);
           }
         } catch (error) {
@@ -221,8 +216,8 @@
         if (!window.firebaseDb) return;
         
         try {
-          const docRef = window.firebaseDoc(window.firebaseDb, window.halfieUserId, 'extra_activities');
-          await window.firebaseSetDoc(docRef, { activities });
+          const docRef = window.firebaseDb.collection(window.halfieUserId).doc('extra_activities');
+          await docRef.set({ activities });
           setExtraActivities(activities);
         } catch (error) {
           console.error('Error saving extra activities:', error);
