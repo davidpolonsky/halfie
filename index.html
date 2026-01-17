@@ -86,7 +86,7 @@
       const [extractedData, setExtractedData] = useState(null);
       const [processingImage, setProcessingImage] = useState(false);
 
-      // IMPORTANT: Replace this with your Firebase Function URL after deployment
+      // Firebase Function URL for screenshot analysis
       const FUNCTION_URL = 'https://us-central1-halfie131.cloudfunctions.net/analyzeScreenshot';
 
       const trainingPlan = [
@@ -281,6 +281,70 @@
             
             break;
           }
+        }
+      };
+
+      const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const handleDrop = async (e, workoutIndex) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const files = e.dataTransfer.files;
+        if (files.length === 0) return;
+
+        const file = files[0];
+        if (!file.type.startsWith('image/')) {
+          alert('Please drop an image file');
+          return;
+        }
+
+        if (FUNCTION_URL === 'YOUR_FUNCTION_URL_HERE') {
+          alert('Screenshot feature not configured yet. Please deploy Firebase Function first.');
+          return;
+        }
+
+        setUploadingImage(workoutIndex);
+        setProcessingImage(true);
+
+        try {
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          const response = await fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ image: base64 }),
+          });
+
+          const data = await response.json();
+          
+          if (data.error) {
+            alert('Could not extract data from image. Please enter manually.');
+          } else {
+            setExtractedData({
+              workoutIndex,
+              date: data.date,
+              distance: data.distance,
+              pace: data.pace,
+              time: data.time,
+            });
+          }
+        } catch (error) {
+          console.error('Error processing image:', error);
+          alert('Error processing image. Please enter data manually.');
+        } finally {
+          setProcessingImage(false);
+          setUploadingImage(null);
         }
       };
 
@@ -634,11 +698,13 @@
                               <div className="mt-3 text-center text-sm text-gray-600">or</div>
                               <div
                                 onPaste={(e) => handlePaste(e, globalIndex)}
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(e, globalIndex)}
                                 className={`mt-2 p-4 border-2 border-dashed border-blue-300 rounded-lg text-center text-sm text-gray-600 ${
                                   processingImage ? 'bg-gray-100 cursor-not-allowed' : 'bg-white cursor-pointer hover:border-blue-400'
                                 }`}
                               >
-                                Click here, then paste (Ctrl+V / Cmd+V) your screenshot
+                                Drag & drop, paste (Ctrl+V / Cmd+V), or click to upload screenshot
                               </div>
                               {processingImage && uploadingImage === globalIndex && (
                                 <p className="text-sm text-indigo-600 mt-2">Processing image with Gemini AI...</p>
