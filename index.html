@@ -82,6 +82,12 @@
       const [firebaseInitialized, setFirebaseInitialized] = useState(false);
       const [user, setUser] = useState(null);
       const [showAuthModal, setShowAuthModal] = useState(false);
+      const [uploadingImage, setUploadingImage] = useState(null);
+      const [extractedData, setExtractedData] = useState(null);
+      const [processingImage, setProcessingImage] = useState(false);
+
+      // IMPORTANT: Replace this with your Firebase Function URL after deployment
+      const FUNCTION_URL = 'https://us-central1-halfie131.cloudfunctions.net/analyzeScreenshot';
 
       const trainingPlan = [
         { week: 1, day: 'Tue', date: '2026-01-06', type: 'Easy Run', distance: 5, targetPace: '5:50-6:00' },
@@ -168,6 +174,130 @@
         } catch (error) {
           console.error('Error signing out:', error);
         }
+      };
+
+      const handleImageUpload = async (e, workoutIndex) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (FUNCTION_URL === 'YOUR_FUNCTION_URL_HERE') {
+          alert('Screenshot feature not configured yet. Please deploy Firebase Function first.');
+          return;
+        }
+
+        setUploadingImage(workoutIndex);
+        setProcessingImage(true);
+
+        try {
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          const response = await fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ image: base64 }),
+          });
+
+          const data = await response.json();
+          
+          if (data.error) {
+            alert('Could not extract data from image. Please enter manually.');
+          } else {
+            setExtractedData({
+              workoutIndex,
+              date: data.date,
+              distance: data.distance,
+              pace: data.pace,
+              time: data.time,
+            });
+          }
+        } catch (error) {
+          console.error('Error processing image:', error);
+          alert('Error processing image. Please enter data manually.');
+        } finally {
+          setProcessingImage(false);
+          setUploadingImage(null);
+        }
+      };
+
+      const handlePaste = async (e, workoutIndex) => {
+        const items = e.clipboardData.items;
+        
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const blob = items[i].getAsFile();
+            
+            if (FUNCTION_URL === 'YOUR_FUNCTION_URL_HERE') {
+              alert('Screenshot feature not configured yet. Please deploy Firebase Function first.');
+              return;
+            }
+
+            setUploadingImage(workoutIndex);
+            setProcessingImage(true);
+
+            try {
+              const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+
+              const response = await fetch(FUNCTION_URL, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: base64 }),
+              });
+
+              const data = await response.json();
+              
+              if (data.error) {
+                alert('Could not extract data from image. Please enter manually.');
+              } else {
+                setExtractedData({
+                  workoutIndex,
+                  date: data.date,
+                  distance: data.distance,
+                  pace: data.pace,
+                  time: data.time,
+                });
+              }
+            } catch (error) {
+              console.error('Error processing image:', error);
+              alert('Error processing image. Please enter data manually.');
+            } finally {
+              setProcessingImage(false);
+              setUploadingImage(null);
+            }
+            
+            break;
+          }
+        }
+      };
+
+      const applyExtractedData = async () => {
+        if (!extractedData) return;
+        
+        const { workoutIndex, distance, pace } = extractedData;
+        
+        const updated = { 
+          ...workouts[workoutIndex], 
+          actualDistance: distance,
+          actualPace: pace,
+          completed: true
+        };
+        await saveWorkout(workoutIndex, updated);
+        
+        setExtractedData(null);
       };
 
       useEffect(() => {
@@ -489,6 +619,82 @@
 
                         {selectedWorkout === globalIndex && (
                           <div className="border-t pt-4 space-y-3">
+                            {/* Upload Screenshot Button */}
+                            <div className="bg-blue-50 p-4 rounded-lg">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Upload or Paste Strava Screenshot
+                              </label>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleImageUpload(e, globalIndex)}
+                                disabled={processingImage}
+                                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 disabled:opacity-50"
+                              />
+                              <div className="mt-3 text-center text-sm text-gray-600">or</div>
+                              <div
+                                onPaste={(e) => handlePaste(e, globalIndex)}
+                                className={`mt-2 p-4 border-2 border-dashed border-blue-300 rounded-lg text-center text-sm text-gray-600 ${
+                                  processingImage ? 'bg-gray-100 cursor-not-allowed' : 'bg-white cursor-pointer hover:border-blue-400'
+                                }`}
+                              >
+                                Click here, then paste (Ctrl+V / Cmd+V) your screenshot
+                              </div>
+                              {processingImage && uploadingImage === globalIndex && (
+                                <p className="text-sm text-indigo-600 mt-2">Processing image with Gemini AI...</p>
+                              )}
+                            </div>
+
+                            {/* Extracted Data Preview */}
+                            {extractedData && extractedData.workoutIndex === globalIndex && (
+                              <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+                                <h4 className="font-semibold text-green-800 mb-2">Extracted Data - Verify & Apply</h4>
+                                {extractedData.date && (
+                                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded">
+                                    <p className="text-sm">
+                                      <span className="font-semibold">Run Date from Screenshot:</span> {extractedData.date}
+                                    </p>
+                                    <p className="text-sm">
+                                      <span className="font-semibold">Scheduled Date:</span> {formatDate(workout.date)}
+                                    </p>
+                                    {extractedData.date.toLowerCase().includes(workout.date.split('-')[2]) === false && (
+                                      <p className="text-sm text-orange-600 font-semibold mt-1">
+                                        ⚠️ Dates don't match! You can adjust the "Actual Date" field below.
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-3 gap-3 mb-3">
+                                  <div>
+                                    <p className="text-xs text-gray-600">Distance</p>
+                                    <p className="font-semibold text-green-800">{extractedData.distance} km</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-600">Pace</p>
+                                    <p className="font-semibold text-green-800">{extractedData.pace} /km</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-600">Time</p>
+                                    <p className="font-semibold text-green-800">{extractedData.time}</p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={applyExtractedData}
+                                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700"
+                                  >
+                                    Apply Data & Mark Complete
+                                  </button>
+                                  <button
+                                    onClick={() => setExtractedData(null)}
+                                    className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
